@@ -1,0 +1,1 @@
+To get LittleSuit to boot your operating system, place a lua script at `/boot/boot.lua`
