@@ -7,6 +7,8 @@
 _G._OSVERSION = "LittleSuit 1.0.0"
 _G._KERNEL = "LittleSuit"
 
+local UUID_LENGTH = 16
+
 local _kernel_memory_ = {
     ["processes"] = {},
     ["users"] = {
@@ -41,12 +43,17 @@ local _kernel_memory_ = {
             ["permissions"] = {}
         }
     },
+    ["messagesubcribers"] = {},
     ["sockets"] = {},
     ["pipes"] = {},
+    ["channels"] = {},
+    ["published-channels"] = {},
     ["states"] = {
         ["running"] = true
     },
     ["components"] = {},
+    ["drivers"] = {},
+    ["uuids"] = {},
     ["data"] = {}
 }
 
@@ -65,8 +72,54 @@ function getFirstDefined(variables, defaultVariable)
     end
     return defaultVariable
 end
-function generateUUID()
+function generateUUID(prefix)
+    local symbols = '0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ'
+    local output = define(prefix, "m")
+    for i=0, UUID_LENGTH do
+        local r = math.random(1, (string.len(symbols) - 1))
+        output = output + symbols:sub(r,r)
+    end
 
+    local x = (#_kernel_memory_["uuids"] % string.len(symbols)) + 1
+    output = output + symbols:sub(x,x)
+    table.insert(_kernel_memory_["uuids"], output)
+    return output
+end
+function tableContainsValue(tbl, target)
+    for index, value in pairs(tbl) do
+        if value == target then
+            return true
+        end
+    end
+    return false
+end
+function tableContainsIndex(tbl, target)
+    for index, value in pairs(tbl) do
+        if index == target then
+            return true
+        end
+    end
+    return false
+end
+function getFromTableByIndex(tbl, target)
+    for index, value in pairs(tbl) do
+        if index == target then
+            return index, value
+        end
+    end
+    return nil, nil
+end
+function getFromTableByValue(tbl, target)
+    for index, value in pairs(tbl) do
+        if value == target then
+            return index, value
+        end
+    end
+    return nil, nil
+end
+function removeFromTableByValue(tbl, target)
+    local index, value = getFromTableByValue(tbl, target)
+    table.remove(tbl, index)
 end
 
 --  Create sandboxing systems
@@ -84,61 +137,134 @@ end
 --  Get the raw filesystem
 local rfs = component.proxy(computer.getBootAddress())
 
+function checkUserHasPermission(userID, permission)
+    local user = _kernel_memory_["users"][userID]
+    if tableContainsValue(user["permissions"], permission) or tableContainsValue(user["permissions"], "*") then
+        return true
+    end
+    for _, groupID in pairs(user["groups"]) do
+        local group = _kernel_memory_["groups"][groupID]
+        if tableContainsValue(group["permissions"], permission) or tableContainsValue(group["permissions"], "*") then
+            return true
+        end
+    end
+    return false
+end
+function checkUserHasFlag(userID, flag)
+    local user = _kernel_memory_["users"][userID]
+    if tableContainsValue(user["flags"], flag) then
+        return true
+    end
+    for _, groupID in pairs(user["groups"]) do
+        local group = _kernel_memory_["groups"][groupID]
+        if tableContainsValue(group["flags"], flag) then
+            return true
+        end
+    end
+    return false
+end
+
+function isOwner(UUID, inqueryTarget)
+    --[[
+        Check if the specified UUID owns the UUID in inqueryTarget.
+        This includes going up the hierarchy. If inqueryTarget is a process that's owned by a user, then it should return true.
+
+        TODO!
+    ]]
+    return true
+end
+
+--  Create state storage system
+    function save()
+        -- save things like the users and groups!
+    end
+    function load()
+        -- load things like the users and groups!
+    end
+
 --  Create user systems
-    function createUser(invoker, username, password, groups, flags, permissions)
+    function createUser(username, password, groups, flags, permissions)
         groups = define(password, {})
         flags = define(flags, {})
         permissions = define(permissions, {})
-    end
-    function deleteUser(invoker, userID)
+        local uuid = generateUUID("u")
 
-    end
-    function lookupUser(invoker, username)
+        _kernel_memory_["users"][uuid] = {
+            ["uuid"] = uuid,
+            ["username"] = username:lower(),
+            ["password"] = password,
+            ["groups"] = groups,
+            ["flags"] = flags,
+            ["permissions"] = permissions
+        }
 
+        return uuid
     end
-    function getUserInfo(invoker, userID)
-
+    function deleteUser(userID)
+        _kernel_memory_["users"][userID] = nil
     end
-    function addUserToGroup(invoker, userID, groupID)
-
+    function lookupUser(username)
+        for UUID, user in pairs(_kernel_memory_["users"]) do
+            if user["username"] == username then
+                return UUID
+            end
+        end
+        return nil
     end
-    function removeUserFromGroup(invoker, userID, groupID)
-
+    function getUserInfo(userID)
+        return _kernel_memory_["users"][userID]
     end
-    function setUserFlag(invoker, userID, flag)
-
+    function addUserToGroup(userID, groupID)
+        table.insert(_kernel_memory_["users"][userID]["groups"], groupID)
     end
-    function removeUserFlag(invoker, userID, flag)
-
+    function removeUserFromGroup(userID, groupID)
+        removeFromTableByValue(_kernel_memory_["users"][userID]["groups"], groupID)
     end
-    function grantUserPermission(invoker, userID, permission)
-    
+    function setUserFlag(userID, flag)
+        table.insert(_kernel_memory_["users"][userID]["flags"], flag)
     end
-    function revokeUserPermission(invoker, userID, permission)
-
+    function removeUserFlag(userID, flag)
+        removeFromTableByValue(_kernel_memory_["users"][userID]["flags"], flag)
+    end
+    function grantUserPermission(userID, permission)
+        table.insert(_kernel_memory_["users"][userID]["permissions"], permission)
+    end
+    function revokeUserPermission(userID, permission)
+        removeFromTableByValue(_kernel_memory_["users"][userID]["permissions"], permission)
     end
 --  Create group systems
-    function createGroup(invoker, name, flags, permissions)
+    function createGroup(name, flags, permissions)
+        flags = define(flags, {})
+        permissions = define(permissions, {})
+        local uuid = generateUUID("g")
 
-    end
-    function deleteGroup(invoker, groupID)
+        _kernel_memory_["groups"][uuid] = {
+            ["uuid"] = uuid,
+            ["name"] = name:lower(),
+            ["flags"] = flags,
+            ["permissions"] = permissions
+        }
 
+        return uuid
     end
-    function setGroupFlag(invoker, groupID, flag)
-
+    function deleteGroup(groupID)
+        _kernel_memory_["groups"][groupID] = nil
     end
-    function removeGroupFlag(invoker, groupID, flag)
-
+    function setGroupFlag(groupID, flag)
+        table.insert(_kernel_memory_["groups"][groupID]["flags"], flag)
     end
-    function grantGropPermission(invoker, groupID, permission)
-    
+    function removeGroupFlag(groupID, flag)
+        removeFromTableByValue(_kernel_memory_["groups"][userID]["flags"], flag)
     end
-    function revokeGropPermission(invoker, groupID, permission)
-
+    function grantGropPermission(groupID, permission)
+        table.insert(_kernel_memory_["groups"][groupID]["permissions"], permission)
+    end
+    function revokeGroupPermission(groupID, permission)
+        removeFromTableByValue(_kernel_memory_["groups"][userID]["permissions"], permission)
     end
 --  Create process systems
-    function spawnProcess(enviroment, func, ...)
-        local t = coroutine.create(function()
+    function spawnProcess(enviroment, func)
+        local t = coroutine.create(function(...)
             if (enviroment == nil) then
                 -- No sandbox!
                 pcall(func, ...)
@@ -147,121 +273,237 @@ local rfs = component.proxy(computer.getBootAddress())
                 run_sandbox(enviroment, func, ...)
             end
         end)
-        coroutine.resume(t)
+        --coroutine.resume(t)
         return t
     end
-    function createProcess(invoker, processEntryMethod, env)
-
+    function createProcess(owner, enviroment, func)
+        local uuid = generateUUID("p")
+        local thread = spawnProcess(enviroment, func)
+        _kernel_memory_["processes"][uuid] = {
+            ["uuid"] = uuid,
+            ["owner"] = owner,
+            ["proxy"] = thread
+        }
+        return uuid
     end
-    function getProcessInfo(invoker, processID)
-
+    function getProcessInfo(processID)
+        return _kernel_memory_["processes"][processID]
     end
-    function startProcess(invoker, processID, arguments)
-
+    function startProcess(processID, ...)
+        coroutine.resume(_kernel_memory_["processes"][processID]["proxy"], ...)
     end
-    function killProcess(invoker, processID)
-
+    function killProcess(processID)
+        -- TODO!
     end
 
 --  Create IPC systems
 --  [ Messaging ]
     function publishMessage(invoker, ...)
-        --computer.pushSignal("ipc_message_" .. channel, sender, ...)
+        computer.pushSignal("ipc_message", invoker, ...)
     end
     function subscribeToMessages(invoker, callback)
-
+        table.insert(_kernel_memory_["messagesubcribers"], {
+            ["invoker"] = invoker,
+            ["method"] = callback
+        })
     end
-    --[[
-        function listenForMessage(channel, callback)
-            callback(table.unpack(computer.pullSignal("ipc_message_" .. channel)))
-        end
-    ]]
 --  [ Pipes ]
-    function createPipe(invoker, bind1, bind2) {
-        
+    function createPipe(bind1, bind2) {
+        local uuid = generateUUID("y")
+        _kernel_memory_["pipes"][uuid] = {
+            ["uuid"] = uuid
+            ["binds"] = {bind1, bind2},
+            ["subcriptions"] = {
+                ["open"] = {function() end, function() end},
+                ["close"] = {function() end, function() end},
+                ["write"] = {function() end, function() end}
+            }
+        }
+        bind1({
+            ["onOpen"] = function(callback)
+                _kernel_memory_["pipes"][uuid]["subcriptions"]["open"][1] = callback
+            end,
+            ["onClose"] = function(callback)
+                _kernel_memory_["pipes"][uuid]["subcriptions"]["close"][1] = callback
+            end,
+            ["onWrite"] = function(callback)
+                _kernel_memory_["pipes"][uuid]["subcriptions"]["write"][1] = callback
+            end,
+            ["close"] = function()
+                computer.pushSignal("ipc_pipe_close", uuid)
+            end,
+            ["write"] = function(...)
+                computer.pushSignal("ipc_pipe_write", uuid, 1, {...})
+            end
+        })
+        bind2({
+            ["onOpen"] = function(callback)
+                _kernel_memory_["pipes"][uuid]["subcriptions"]["open"][2] = callback
+            end,
+            ["onClose"] = function(callback)
+                _kernel_memory_["pipes"][uuid]["subcriptions"]["close"][2] = callback
+            end,
+            ["onWrite"] = function(callback)
+                _kernel_memory_["pipes"][uuid]["subcriptions"]["write"][2] = callback
+            end,
+            ["close"] = function()
+                computer.pushSignal("ipc_pipe_close", uuid)
+            end,
+            ["write"] = function(...)
+                computer.pushSignal("ipc_pipe_write", uuid, 2, {...})
+            end
+        })
+
+        return uuid
     }
 
     function _examplePipeBind_(pipe)
-        --  pipe:onWrite([ignoreSelf: Boolean = true], callback: (...) -> Void) -> Void
-        pipe:onWrite(true, function(...)
+        pipe.onOpen(function()
+            print("Pipe opened!")
+        end)
+
+        --  pipe:onWrite(callback: (...) -> Void) -> Void
+        pipe.onWrite(function(...)
             -- invoked when the pipe is written to!
             local data = {...}
             print("They said " + data[1])
         end)
 
         --  pipe:onClose(callback: () -> Void) -> Void
-        pipe:onClose(function()
+        pipe.onClose(function()
             -- invoked when the pipe is closed!
         end)
 
         --  pipe:write(data: ...) -> Void
-        pipe:write("Hello world!")
+        pipe.write("Hello world!")
 
         --  pipe:close() -> Void
-        pipe:close()
+        pipe.close()
     end
 
 --  [ Channels ]
     function createChannel(invoker)
-
+        -- list types => 0: none; 1: whitelist; 2: blacklist;
+        local uuid = generateUUID("c")
+        _kernel_memory_["channels"][uuid] = {
+            ["uuid"] = uuid,
+            ["owner"] = invoker,
+            ["list"] = {["type"] = 0, ["contents"] = {}},
+            ["canwrite"] = {},
+            ["subcribers"] = {},
+            ["published-name"] = nil
+        }
+        return uuid
     end
-    function deleteChannel(invoker, channelID)
-
+    function deleteChannel(channelID)
+        _kernel_memory_["channels"][channelID] = nil
     end
     function writeToChannel(invoker, channelID, ...)
-
+        computer.pushSignal("ipc_channel_write", channelID, invoker, {...})
     end
-    function grantChannelWritePermission(invoker, channelID, targetID)
+    function grantChannelWritePermission(channelID, targetID)
         -- targetID is either the UUID of a process, user, group, or it is the literal "all"
+        table.insert(_kernel_memory_["channels"][channelID]["canwrite"], targetID)
     end
-    function revokeChannelWritePermission(invoker, channelID, targetID)
+    function revokeChannelWritePermission(channelID, targetID)
         -- targetID is either the UUID of a process, user, group, or it is the literal "all"
+        removeFromTableByValue(_kernel_memory_["channels"][channelID]["canwrite"], targetID)
     end
-    function inviteToChannel(invoker, channelID, targetID)
-        -- targetID is either the UUID of a process, user, or group.
-    end
-    function publishChannel(invoker, channelID, channelName, target)
+    function publishChannel(channelID, channelName, target)
         -- target is either the UUID of a process, user, group, the literal "all", or nil.
         -- If the target is either "all" or nil, then the channel is available to anyone.
+        -- TODO: Selective publishing. For now, all publishments are PUBLIC!
+        if _kernel_memory_["published-channels"][channelName] ~= nil then
+            error("Channel already exists!")
+        end
+
+        _kernel_memory_["channels"][channelID]["published-name"] = channelName
+        _kernel_memory_["published-channels"][channelName] = {
+            ["UUID"] = channelID,
+            ["name"] = channelName,
+            ["targets"] = {target},
+        }
     end
     function unpublishChannel(invoker, channelID)
         -- unpublishes the channel
+        local channelName = _kernel_memory_["channels"][channelID]["published-name"]
+        _kernel_memory_["published-channels"][channelName] = nil
+        _kernel_memory_["channels"][channelID]["published-name"] = nil
     end
-    function lookupChannel(invoker, channelName)
+    function lookupChannel(channelName)
         -- tries to find a published channel by that name, and if found returns the UUID, otherwise returns nil
+        return _kernel_memory_["published-channels"][channelName]
     end
-    function subcribeToChannel(invoker, channelID)
-
-    end
-    function subcribeToChannelInvite(invoker)
-        -- Fired when invited to a channel
+    function subcribeToChannel(channelID, callback)
+        table.insert(_kernel_memory_["channels"][channelID]["subcribers"], callback)
     end
 
---  [ Sockets ]
-    function createSocket(invoker, name)
-        -- if a name is provided, the socket will automatically be published
-    end
-    function publishSocket(invoker, socketID, name)
-
-    end
-    function lookupSocket(invoker, socketName)
-        -- tries to find a published socket by that name, and if found returns the UUID, otherwise returns nil
-    end
-    function subcribeToSocket(invoker, socketID, callback)
-
-    end
-    function writeToSocket(invoker, socketID, ...)
-
-    end
-
-
-    --  Create kernel 'interrupt' method
+--  Create kernel 'interrupt' method
 function kernel_signal(job, ...)
     local arguments = {...}
 
 end
 
+--===============================[ Define Kernal Responders ]===============================--
+function getDriver(type)
+    --[[
+        These are the drivers that we need ASAP:
+            - Filesystem (ManagedFS)
+            - GPU
+            - Screen
+            - Drive
+    ]]
+
+    local driver = _kernel_memory_[type:lower()]
+
+    if driver == nil then
+        driver = {
+            class = "generic",
+            name = "generic-driver",
+            new = function(proxy)
+                return proxy
+            end
+        }
+    end
+
+    return driver
+
+end
+
+function createDeviceSocketFile()
+    --[[
+        Create a virtual folder/file at `/dev` for the device!
+        This is the COMPONENT SOCKET. The driver will likely create a device socket file too!
+        The DSFs created here will look like this `/dev/c--`, where the last are a UUID.
+    ]]
+end
+function loadComponents()
+    for address, componentType in component.list() do
+        if _kernel_memory_["components"][address] == nil then
+            local driver = getDriver(componentType)
+
+            _kernel_memory_["components"][address] = {
+                ["address"] = address,
+                ["type"] = componentType,
+                ["slot"] = component.slot(address),
+                ["driver-class"] = driver.class,
+                ["driver-name"] = driver.name,
+                ["proxy"] = driver.new(component.proxy(address))
+            }
+
+            computer.pushSignal("kernel_device_connected" .. channel, sender, ...)
+        end
+    end
+end
+function pollComponents()
+    if #component.list() ~= #_kernel_memory_["components"] then
+        -- A component was added or removed! 
+        loadComponents()
+    end
+end
+
 --========================[ Define API Wrappers for Kernel Methods ]========================--
+
 
 --================================[ Define Default Sandbox ]================================--
 _Sandbox_G = {
@@ -338,10 +580,8 @@ _Sandbox_G = {
         time = os.time
     }
     --  Custom Objects
-    
+
 }
-
-
 
 --====================================[ Start OS Level ]====================================--
 
@@ -351,5 +591,6 @@ _Sandbox_G = {
     The loop will run so long as the system's `running` flag is set. THis loop is required, otherwise the system will halt!
 ]]
 while _kernel_memory_["states"]["running"] do
-
+    -- computer.pushSignal("ipc_message_" .. channel, sender, ...)
+    -- computer.pullSignal("ipc_message_" .. channel)
 end
