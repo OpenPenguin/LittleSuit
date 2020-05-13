@@ -454,7 +454,7 @@ function getDriver(type)
             - Drive
     ]]
 
-    local driver = _kernel_memory_[type:lower()]
+    local driver = _kernel_memory_["drivers"][type:lower()]
 
     if driver == nil then
         driver = {
@@ -588,7 +588,7 @@ _Sandbox_G = {
 
 --[[
     Create signal handler loop
-    The loop will run so long as the system's `running` flag is set. THis loop is required, otherwise the system will halt!
+    The loop will run so long as the system's `running` flag is set. This loop is required, otherwise the system will halt!
 ]]
 while _kernel_memory_["states"]["running"] do
     -- computer.pushSignal("ipc_message_" .. channel, sender, ...)
