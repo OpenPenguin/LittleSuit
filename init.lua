@@ -122,6 +122,17 @@ function removeFromTableByValue(tbl, target)
     table.remove(tbl, index)
 end
 
+function loadfile(addr, file)
+    local handle = assert(invoke(addr, "open", file))
+    local buffer = ""
+    repeat
+        local data = invoke(addr, "read", handle, math.huge)
+        buffer = buffer .. (data or "")
+    until not data
+    invoke(addr, "close", handle)
+    return load(buffer, "=" .. file, "bt", _G)
+end
+
 --  Create sandboxing systems
 local _Sandbox_G = nil
 
@@ -308,10 +319,10 @@ end
         })
     end
 --  [ Pipes ]
-    function createPipe(bind1, bind2) {
+    function createPipe(bind1, bind2)
         local uuid = generateUUID("y")
         _kernel_memory_["pipes"][uuid] = {
-            ["uuid"] = uuid
+            ["uuid"] = uuid,
             ["binds"] = {bind1, bind2},
             ["subcriptions"] = {
                 ["open"] = {function() end, function() end},
@@ -355,7 +366,7 @@ end
         })
 
         return uuid
-    }
+    end
 
     function _examplePipeBind_(pipe)
         pipe.onOpen(function()
@@ -491,7 +502,7 @@ function loadComponents()
                 ["proxy"] = driver.new(component.proxy(address))
             }
 
-            computer.pushSignal("kernel_device_connected" .. channel, sender, ...)
+            computer.pushSignal("kernel_device_connected", address)
         end
     end
 end
@@ -584,7 +595,11 @@ _Sandbox_G = {
 }
 
 --====================================[ Start OS Level ]====================================--
-
+do
+    local os = loadfile(rfs, "/boot/os.lua")
+    local osProcess = createProcess("kerneluser-root", _Sandbox_G, os)
+    startProcess(osProcess)
+end
 
 --[[
     Create signal handler loop
