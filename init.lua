@@ -201,10 +201,10 @@ function isOwner(UUID, inqueryTarget)
 end
 
 --  Create state storage system
-    function save()
+    function save_state()
         -- save things like the users and groups!
     end
-    function load()
+    function load_state()
         -- load things like the users and groups!
     end
 
