@@ -140,10 +140,10 @@ function importfile(addr, file)
       if result[1] then
         return table.unpack(result, 2, result.n)
       else
-        error(result[2] || "fish want to bite my eyes")
+        error(result[2] or "fish want to bite my eyes")
       end
     else
-      error(reason || "the monkey ate my toes")
+      error(reason or "the monkey ate my toes")
     end
   end
 
