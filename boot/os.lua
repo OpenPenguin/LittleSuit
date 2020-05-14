@@ -2,4 +2,6 @@
     This is what is called after the kernel finishes!
 ]]
 
-print("OS Started!")
+local gpu = ...
+
+gpu.set(1, 2, "OS Started!")
