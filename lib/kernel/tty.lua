@@ -1,0 +1,59 @@
+local tty = {}
+    tty.__metatable = tty
+
+    function tty.new(display)
+        local w, h = display.maxResolution()
+
+        return setmetatable({
+            ["display"] = display,
+            ["x"] = 1,
+            ["y"] = 1,
+            ["lines"] = {},
+            ["width"] = w,
+            ["height"] = h
+        }, tty)
+    end
+
+    function tty.clear(self)
+        gpu.setBackground(0x000000)
+        gpu.setForeground(0xFFFFFF)
+        gpu.fill(1, 1, rawget(self, "width"), rawget(self, "height"), " ")
+    end
+
+    function tty.print(self, str)
+        local x = rawget(self, "x")
+        local y = rawget(self, "y")
+        local w = rawget(self, "height")
+        local h = rawget(self, "width")
+        local display = rawget(self, "display")
+
+        for i=1, string.len(str) do
+            local c = str:sub(i,i)
+            if c == '\n' then
+                y = y + 1
+                x = 1
+            else
+                display.set(x, y, str:sub(i,i))
+                x = x + 1
+            end
+
+            if x > w then
+                x = 1
+                y = y + 1
+            end
+            -- Later, add support for scrolling!
+            if y > h then
+                y = 1
+                x = 1
+            end
+        end
+
+        rawset(self, "x", x)
+        rawset(self, "y", y)
+    end
+
+    function tty.println(self, str)
+        self:print(str .. "\n")
+    end
+
+return tty

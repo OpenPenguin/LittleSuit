@@ -123,7 +123,7 @@ function removeFromTableByValue(tbl, target)
 end
 
 function loadfile(addr, file)
-    local handle = assert(component.invoke(addr, "open", file))
+    local handle = assert(component.invoke(addr, "open", file), "Unable to open file!")
     local buffer = ""
     repeat
         local data = component.invoke(addr, "read", handle, math.huge)
@@ -132,6 +132,20 @@ function loadfile(addr, file)
     component.invoke(addr, "close", handle)
     return load(buffer, "=" .. file, "bt", _G)
 end
+
+function importfile(addr, file)
+    local program, reason = loadfile(addr, file)
+    if program then
+      local result = table.pack(pcall(program))
+      if result[1] then
+        return table.unpack(result, 2, result.n)
+      else
+        error(result[2])
+      end
+    else
+      error(reason)
+    end
+  end
 
 --  Create sandboxing systems
 local _Sandbox_G = nil
@@ -597,10 +611,36 @@ _Sandbox_G = {
 }
 
 --====================================[ Start OS Level ]====================================--
+local status
 do
+    local screen = component.list("screen", true)()
+    local gpu = screen and component.list("gpu", true)()
+
+    gpu = component.proxy(gpu)
+
+    if not gpu.getScreen() then
+        gpu.bind(rawget(self, "screen"))
+    end
+    local w, h = gpu.maxResolution()
+    gpu.setResolution(w, h)
+    gpu.setBackground(0x000000)
+    gpu.setForeground(0xFFFFFF)
+    gpu.fill(1, 1, w, h, " ")
+  
+    local tty_lib = importfile(rfaddr, "/lib/kernel/tty.lua")
+
+    --local tty = tty_lib.new(gpu)
+
+    _kernel_memory_["data"]["display_main"] = gpu
+    --_kernel_memory_["data"]["tty"] = tty
+end
+
+do
+    --status("Booting OS")
+    _kernel_memory_["data"]["display_main"].set(1, 1, "Attempting startup!")
     local os = loadfile(rfaddr, "/boot/os.lua")
     local osProcess = createProcess("kerneluser-root", _Sandbox_G, os)
-    startProcess(osProcess)
+    startProcess(osProcess, _kernel_memory_["data"]["display_main"])
 end
 
 --[[

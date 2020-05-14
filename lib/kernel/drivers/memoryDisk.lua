@@ -1,0 +1,2 @@
+local memoryDisk = {}
+return memoryDisk

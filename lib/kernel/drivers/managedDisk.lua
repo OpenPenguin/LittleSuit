@@ -1,0 +1,2 @@
+local managedDisk = {}
+return managedDisk
