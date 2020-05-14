@@ -77,11 +77,11 @@ function generateUUID(prefix)
     local output = define(prefix, "m")
     for i=0, UUID_LENGTH do
         local r = math.random(1, (string.len(symbols) - 1))
-        output = output + symbols:sub(r,r)
+        output = output .. symbols:sub(r,r)
     end
 
     local x = (#_kernel_memory_["uuids"] % string.len(symbols)) + 1
-    output = output + symbols:sub(x,x)
+    output = output .. symbols:sub(x,x)
     table.insert(_kernel_memory_["uuids"], output)
     return output
 end
@@ -123,13 +123,13 @@ function removeFromTableByValue(tbl, target)
 end
 
 function loadfile(addr, file)
-    local handle = assert(invoke(addr, "open", file))
+    local handle = assert(component.invoke(addr, "open", file))
     local buffer = ""
     repeat
-        local data = invoke(addr, "read", handle, math.huge)
+        local data = component.invoke(addr, "read", handle, math.huge)
         buffer = buffer .. (data or "")
     until not data
-    invoke(addr, "close", handle)
+    component.invoke(addr, "close", handle)
     return load(buffer, "=" .. file, "bt", _G)
 end
 
@@ -147,6 +147,7 @@ end
 
 --  Get the raw filesystem
 local rfs = component.proxy(computer.getBootAddress())
+local rfaddr = computer.getBootAddress()
 
 function checkUserHasPermission(userID, permission)
     local user = _kernel_memory_["users"][userID]
@@ -589,14 +590,15 @@ _Sandbox_G = {
         clock = os.clock, 
         difftime = os.difftime, 
         time = os.time
-    }
+    },
+    print = print
     --  Custom Objects
 
 }
 
 --====================================[ Start OS Level ]====================================--
 do
-    local os = loadfile(rfs, "/boot/os.lua")
+    local os = loadfile(rfaddr, "/boot/os.lua")
     local osProcess = createProcess("kerneluser-root", _Sandbox_G, os)
     startProcess(osProcess)
 end
@@ -608,4 +610,5 @@ end
 while _kernel_memory_["states"]["running"] do
     -- computer.pushSignal("ipc_message_" .. channel, sender, ...)
     -- computer.pullSignal("ipc_message_" .. channel)
+    computer.pullSignal("halt_running_loop")
 end
