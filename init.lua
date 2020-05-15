@@ -8,6 +8,7 @@ _G._OSVERSION = "LittleSuit 1.0.0"
 _G._KERNEL = "LittleSuit"
 
 local computer = computer
+local _GLOBAL_ENVIROMENT_=_ENV
 
 local UUID_LENGTH = 16
 
@@ -156,9 +157,9 @@ function run_sandbox(sb_env, sb_func, ...)
     local sb_orig_env=_ENV
     if (not sb_func) then return nil end
     _ENV=sb_env
-    local sb_ret={e.pcall(sb_func, ...)}
+    local sb_ret={_GLOBAL_ENVIROMENT_.pcall(sb_func, ...)}
     _ENV=sb_orig_env
-    return e.table.unpack(sb_ret)
+    return _GLOBAL_ENVIROMENT_.table.unpack(sb_ret)
 end
 
 --  Get the raw filesystem
@@ -295,10 +296,10 @@ end
         local t = coroutine.create(function(...)
             if (enviroment == nil) then
                 -- No sandbox!
-                return pcall(func, ...)
+                coroutine.yield(pcall(func, ...))
             else
                 -- Yes sandbox!
-                return run_sandbox(enviroment, func, ...)
+                coroutine.yield(run_sandbox(enviroment, func, ...))
             end
         end)
         --coroutine.resume(t)
@@ -318,7 +319,7 @@ end
         return _kernel_memory_["processes"][processID]
     end
     function startProcess(processID, ...)
-        coroutine.resume(_kernel_memory_["processes"][processID]["proxy"], ...)
+        return coroutine.resume(_kernel_memory_["processes"][processID]["proxy"], ...)
     end
     function killProcess(processID)
         -- TODO!
@@ -642,7 +643,24 @@ do
     _kernel_memory_["data"]["display_main"].set(1, 1, "Attempting startup!")
     local os = loadfile(rfaddr, "/boot/os.lua")
     local osProcess = createProcess("kerneluser-root", _Sandbox_G, os)
-    startProcess(osProcess, _kernel_memory_["data"]["display_main"])
+    local results = table.pack(startProcess(osProcess, _kernel_memory_["data"]["display_main"]))
+
+    --[[
+    local l = 2
+    for index, value in pairs(results) do
+        if value == nil then
+            _kernel_memory_["data"]["display_main"].set(1, l, "nil")
+        elseif value == true then
+            _kernel_memory_["data"]["display_main"].set(1, l, "true")
+        elseif value == false then
+            _kernel_memory_["data"]["display_main"].set(1, l, "false")
+        else
+            _kernel_memory_["data"]["display_main"].set(1, l, tostring(value))
+        end
+        l = l + 1
+    end
+    ]]--
+
 end
 
 --[[
