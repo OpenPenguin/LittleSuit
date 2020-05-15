@@ -7,6 +7,8 @@
 _G._OSVERSION = "LittleSuit 1.0.0"
 _G._KERNEL = "LittleSuit"
 
+local computer = computer
+
 local UUID_LENGTH = 16
 
 local _kernel_memory_ = {
@@ -293,10 +295,10 @@ end
         local t = coroutine.create(function(...)
             if (enviroment == nil) then
                 -- No sandbox!
-                pcall(func, ...)
+                return pcall(func, ...)
             else
                 -- Yes sandbox!
-                run_sandbox(enviroment, func, ...)
+                return run_sandbox(enviroment, func, ...)
             end
         end)
         --coroutine.resume(t)
@@ -650,5 +652,5 @@ end
 while _kernel_memory_["states"]["running"] do
     -- computer.pushSignal("ipc_message_" .. channel, sender, ...)
     -- computer.pullSignal("ipc_message_" .. channel)
-    computer.pullSignal("halt_running_loop")
+    computer.pullSignal(math.huge)
 end
