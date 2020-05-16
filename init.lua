@@ -52,7 +52,8 @@ local _kernel_memory_ = {
     ["channels"] = {},
     ["published-channels"] = {},
     ["states"] = {
-        ["running"] = true
+        ["running"] = true,
+        ["reboot"] = false
     },
     ["components"] = {},
     ["drivers"] = {},
@@ -484,20 +485,6 @@ end
         table.insert(_kernel_memory_["channels"][channelID]["subcribers"], callback)
     end
 
---  Create kernel 'interrupt' method
-function kernel_signal(invoker, job, ...)
-    local arguments = {...}
-    if job:lower() == "get_data" then
-        local pentry = _kernel_memory_["processes"][invoker]
-
-        if pentry["data"][arguments[1]] ~= nil then
-            return true, pentry["data"][arguments[1]]
-        end
-    end
-
-    return false, nil
-end
-
 --  Create a timer system
 function defineTimer(delayInSeconds, callback)
     local currentTime = os.time()
@@ -591,6 +578,28 @@ function clock_tick()
     --  Call a method to say the clock has updated!
     computer.pushSignal("kernel_clock_tick")
     _kernel_memory_["data"]["display_main"].set(1, 15, "clock_update_return @ " .. tostring(os.time()))
+end
+
+--  Create kernel 'interrupt' method
+function kernel_signal(invoker, job, ...)
+    local arguments = {...}
+    job = job:lower()
+    if job == "get_data" then
+        local pentry = _kernel_memory_["processes"][invoker]
+
+        if pentry["data"][arguments[1]] ~= nil then
+            return true, pentry["data"][arguments[1]]
+        end
+    elseif job == "shutdown" then
+        _kernel_memory_["states"]["running"] = false
+        return true
+    elseif job == "reboot" then
+        _kernel_memory_["states"]["running"] = false
+        _kernel_memory_["states"]["reboot"] = true
+        return true
+    end
+
+    return false
 end
 
 --========================[ Define API Wrappers for Kernel Methods ]========================--
@@ -708,7 +717,7 @@ do
     end
 end
 
-do
+function initOS()
     _kernel_memory_["data"]["display_main"].set(1, 1, "Attempting startup!")
     local os = loadfile(rfaddr, "/boot/os.lua")
     local osProcess = createProcess("kerneluser-root", _Sandbox_G, function(UUID, env)
@@ -757,8 +766,9 @@ do
             y = y + 1
         end
     end
-
 end
+
+initOS()
 
 --[[
     Create signal handler loop
@@ -784,3 +794,4 @@ while _kernel_memory_["states"]["running"] do
     computer.pullSignal(1)
 end
 _kernel_memory_["data"]["display_main"].set(1, 18, "os_halt @ " .. tostring(os.time()))
+computer.shutdown(_kernel_memory_["states"]["reboot"])

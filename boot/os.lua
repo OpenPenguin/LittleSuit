@@ -13,3 +13,5 @@ tty:println("Hello World!")
 tty:println("OS is working fine!")
 tty:println("Kernel signals are amazing!")
 tty:println("And the TTY library is great!")
+
+-- kernsig("shutdown")
