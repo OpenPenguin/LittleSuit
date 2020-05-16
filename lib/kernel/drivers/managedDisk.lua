@@ -1,2 +1,0 @@
-local managedDisk = {}
-return managedDisk

@@ -1,2 +1,0 @@
-local memoryDisk = {}
-return memoryDisk

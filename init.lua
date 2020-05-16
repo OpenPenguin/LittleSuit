@@ -607,6 +607,8 @@ function kernel_signal(invoker, job, ...)
         return true
     elseif job == "get_get_clock_tick" then
         return true, _kernel_memory_["os-timer-last-tick"]
+    elseif job == "get_current_process" then
+        return true, invoker
     end
 
     return false
@@ -632,7 +634,7 @@ _Sandbox_G = {
         running = coroutine.running, 
         status = coroutine.status, 
         wrap = coroutine.wrap,
-        yeild = coroutine.yeild
+        yeild = coroutine.yield
     },
     string = { 
         byte = string.byte, 
@@ -745,10 +747,6 @@ function initOS()
             local r = {kernel_signal(UUID, job, ...)}
             assert(r[1], "NO STATE DEFINED FOR KERNSIG")
             return table.unpack(r)
-        end
-
-        env["getCurrentProcess"] = function()
-            return UUID
         end
 
         return loadfile(rfaddr, "/boot/os.lua", env)
