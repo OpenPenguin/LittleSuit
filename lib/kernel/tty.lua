@@ -1,6 +1,12 @@
 local tty = {}
     tty.__metatable = tty
 
+    tty.__index = function(self, index)
+        if tty[index] ~= nil then
+            return tty[index]
+        end
+    end
+
     function tty.new(display)
         local w, h = display.maxResolution()
 
@@ -15,9 +21,12 @@ local tty = {}
     end
 
     function tty.clear(self)
+        local gpu = rawget(self, "display")
         gpu.setBackground(0x000000)
         gpu.setForeground(0xFFFFFF)
         gpu.fill(1, 1, rawget(self, "width"), rawget(self, "height"), " ")
+        rawset(self, "x", 1)
+        rawset(self, "y", 1)
     end
 
     function tty.print(self, str)

@@ -491,11 +491,11 @@ function kernel_signal(invoker, job, ...)
         local pentry = _kernel_memory_["processes"][invoker]
 
         if pentry["data"][arguments[1]] ~= nil then
-            return pentry["data"][arguments[1]]
+            return true, pentry["data"][arguments[1]]
         end
     end
 
-    return nil
+    return false, nil
 end
 
 --  Create a timer system
@@ -571,8 +571,12 @@ function clock_tick()
     --  Get the current time
     local currentTime = os.time()
 
+    -- Debug!
+    _kernel_memory_["data"]["display_main"].set(1, 13, "Clock tick @ " .. tostring(currentTime))
+
     -- Verify at least a second has passed!
     if currentTime > _kernel_memory_["os-timer-last-tick"] then
+        _kernel_memory_["data"]["display_main"].set(1, 14, "Clock update @ " .. tostring(currentTime))
         --  Check if any timers have expired!
         for index, timer in pairs(_kernel_memory_["timers"]) do
             if timer["trigger"] <= currentTime then
@@ -585,7 +589,9 @@ function clock_tick()
     end
 
     --  Call a method to say the clock has updated!
+    _kernel_memory_["data"]["display_main"].set(1, 15, "Clock update pushed @ " .. tostring(os.time()))
     computer.pushSignal("kernel_clock_tick")
+    _kernel_memory_["data"]["display_main"].set(1, 16, "Clock update returning @ " .. tostring(os.time()))
 end
 
 --========================[ Define API Wrappers for Kernel Methods ]========================--
@@ -669,18 +675,6 @@ _Sandbox_G = {
     },
     print = print,
     --  Custom Objects
-    sleep = function(delay)
-        if delay == nil then
-            delay = 1
-        end
-        defineTimer(delay, function()
-            coroutine.resume(_kernel_memory_["processes"][getCurrentProcess()]["proxy"])
-        end)
-        coroutine.yeild()        
-    end,
-    kernsig = function(job, ...)
-        kernel_signal(getCurrentProcess(), job, ...)
-    end
 }
 
 --====================================[ Start OS Level ]====================================--
@@ -719,7 +713,23 @@ do
     _kernel_memory_["data"]["display_main"].set(1, 1, "Attempting startup!")
     local os = loadfile(rfaddr, "/boot/os.lua")
     local osProcess = createProcess("kerneluser-root", _Sandbox_G, function(UUID, env)
-        env["getProcessID"] = function()
+        env["sleep"] = function(delay)
+            if delay == nil then
+                delay = 1
+            end
+            defineTimer(delay, function()
+                coroutine.resume(_kernel_memory_["processes"][env["getCurrentProcess"]()]["proxy"])
+            end)    
+            coroutine.yield()
+        end
+
+        env["kernsig"] = function(job, ...)
+            local r = {kernel_signal(UUID, job, ...)}
+            assert(r[1], "NO STATE DEFINED FOR KERNSIG")
+            return table.unpack(r)
+        end
+
+        env["getCurrentProcess"] = function()
             return UUID
         end
 
@@ -727,6 +737,7 @@ do
     end)
 
     _kernel_memory_["processes"][osProcess]["data"]["display_main"] = _kernel_memory_["data"]["display_main"]
+    _kernel_memory_["processes"][osProcess]["data"]["tty_main"] = _kernel_memory_["data"]["tty"]
 
     local results = table.pack(startProcess(osProcess, _kernel_memory_["data"]["display_main"]))
 
@@ -754,9 +765,22 @@ end
     Create signal handler loop
     The loop will run so long as the system's `running` flag is set. This loop is required, otherwise the system will halt!
 ]]
+_kernel_memory_["data"]["display_main"].set(1, 10, "Attempting kernel loop!")
+
+local clock_thread = coroutine.create(function()
+    while _kernel_memory_["states"]["running"] do
+        _kernel_memory_["data"]["display_main"].set(1, 11, "clock_thread_tick @ " .. tostring(os.time()))
+        clock_tick()
+        _kernel_memory_["data"]["display_main"].set(1, 12, "clock_thread_tick_ok @ " .. tostring(os.time()))
+    end
+    _kernel_memory_["data"]["display_main"].set(1, 12, "clock_thread_close @ " .. tostring(os.time()))
+end)
+
+coroutine.resume(clock_thread)
+
 while _kernel_memory_["states"]["running"] do
     -- computer.pushSignal("ipc_message_" .. channel, sender, ...)
     -- computer.pullSignal("ipc_message_" .. channel)
-    clock_tick()
-    computer.pullSignal(math.huge)
+    computer.pullSignal(1)
 end
+_kernel_memory_["data"]["display_main"].set(1, 17, "OS halted @ " .. tostring(os.time()))
