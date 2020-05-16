@@ -53,14 +53,17 @@ local _kernel_memory_ = {
     ["published-channels"] = {},
     ["states"] = {
         ["running"] = true,
-        ["reboot"] = false
+        ["reboot"] = false,
+        ["show-clock-tick"] = true
     },
     ["components"] = {},
     ["drivers"] = {},
     ["uuids"] = {},
     ["data"] = {},
     ["timers"] = {},
-    ["os-timer-last-tick"] = 0
+    ["os-timer-last-tick"] = 0,
+    ["os-clock-ticks"] = 0,
+    ["os-event-ticks"] = 0
 }
 
 --  Define some generic helpers
@@ -567,12 +570,8 @@ function clock_tick()
     --  Get the current time
     local currentTime = getTimeInSeconds()
 
-    -- Debug!
-    _kernel_memory_["data"]["display_main"].set(1, 13, "clock_tick @ " .. tostring(currentTime))
-
     -- Verify at least a second has passed!
     if currentTime > _kernel_memory_["os-timer-last-tick"] then
-        _kernel_memory_["data"]["display_main"].set(1, 14, "clock_update @ " .. tostring(currentTime))
         --  Check if any timers have expired!
         for index, timer in pairs(_kernel_memory_["timers"]) do
             if timer["trigger"] <= currentTime then
@@ -582,11 +581,11 @@ function clock_tick()
         end
 
         _kernel_memory_["os-timer-last-tick"] = getTimeInSeconds()
+        _kernel_memory_["os-clock-ticks"] = _kernel_memory_["os-clock-ticks"] + 1
     end
 
     --  Call a method to say the clock has updated!
     computer.pushSignal("kernel_clock_tick")
-    _kernel_memory_["data"]["display_main"].set(1, 15, "clock_update_return @ " .. tostring(getTimeInSeconds()))
 end
 
 --  Create kernel 'interrupt' method
@@ -787,18 +786,51 @@ initOS()
 ]]
 _kernel_memory_["data"]["display_main"].set(1, 10, "Attempting kernel loop!")
 
+local clock_thread
+local w,h = _kernel_memory_["data"]["display_main"].maxResolution()
+
+do
+    -- Clock thread!
+    clock_thread = coroutine.create(function()
+        while _kernel_memory_["states"]["running"] do
+            clock_tick()
+            if _kernel_memory_["states"]["show-clock-tick"] then
+                local line = "TICK " .. 
+                    tostring(_kernel_memory_["os-clock-ticks"]) .. 
+                    ":" .. 
+                    tostring(_kernel_memory_["os-event-ticks"]) .. 
+                    ":" ..
+                    coroutine.status(clock_thread)
+
+                _kernel_memory_["data"]["display_main"].set(1, h, line)
+            end
+        end
+    end)
+end
+
+coroutine.resume(clock_thread)
+
 while _kernel_memory_["states"]["running"] do
     -- computer.pushSignal("ipc_message_" .. channel, sender, ...)
     -- computer.pullSignal("ipc_message_" .. channel)
 
-    --  CLOCK
-    _kernel_memory_["data"]["display_main"].set(1, 11, "clock_thread_tick @ " .. tostring(getTimeInSeconds()))
-    clock_tick()
-    _kernel_memory_["data"]["display_main"].set(1, 12, "clock_thread_tick_ok @ " .. tostring(getTimeInSeconds()))
+    if _kernel_memory_["states"]["show-clock-tick"] then
+        local line = "TICK " .. 
+            tostring(_kernel_memory_["os-clock-ticks"]) .. 
+            ":" .. 
+            tostring(_kernel_memory_["os-event-ticks"]) .. 
+            ":" ..
+            coroutine.status(clock_thread)
 
-    --  EVENTS
-    _kernel_memory_["data"]["display_main"].set(1, 17, "os_tick @ " .. tostring(getTimeInSeconds()))
+        _kernel_memory_["data"]["display_main"].set(1, h, line)
+    end
+
+    if coroutine.status(clock_thread) ~= "running" then
+        coroutine.resume(clock_thread)
+    end
+
     computer.pullSignal(1)
+    _kernel_memory_["os-event-ticks"] = _kernel_memory_["os-event-ticks"] + 1
 end
 _kernel_memory_["data"]["display_main"].set(1, 18, "os_halt @ " .. tostring(getTimeInSeconds()))
 computer.shutdown(_kernel_memory_["states"]["reboot"])
