@@ -296,7 +296,7 @@ end
 --  Create process systems
     function spawnProcess(enviroment, func)
         local t = coroutine.create(function(...)
-            coroutine.yield(run_sandbox(enviroment, func, ...))
+            coroutine.yield(func(...))
         end)
         --coroutine.resume(t)
         return t
@@ -314,7 +314,7 @@ end
         end
 
         local thread = spawnProcess(enviroment, function(...)
-            func(...)
+            return run_sandbox(enviroment, func, ...)
         end)
         _kernel_memory_["processes"][uuid] = {
             ["uuid"] = uuid,
