@@ -486,8 +486,16 @@ end
     end
 
 --  Create a timer system
+function getTime()
+    return os.clock()
+end
+function getTimeInSeconds()
+    local t = getTime()
+    return t - (t % 1)
+end
+
 function defineTimer(delayInSeconds, callback)
-    local currentTime = os.time()
+    local currentTime = getTimeInSeconds()
     local triggerTime = currentTime + delayInSeconds
     table.insert(_kernel_memory_["timers"], {
         ["created"] = currentTime,
@@ -495,6 +503,7 @@ function defineTimer(delayInSeconds, callback)
         ["callback"] = callback
     })
 end
+
 
 --===============================[ Define Kernal Responders ]===============================--
 function getDriver(type)
@@ -556,7 +565,7 @@ end
 
 function clock_tick()
     --  Get the current time
-    local currentTime = os.time()
+    local currentTime = getTimeInSeconds()
 
     -- Debug!
     _kernel_memory_["data"]["display_main"].set(1, 13, "clock_tick @ " .. tostring(currentTime))
@@ -572,12 +581,12 @@ function clock_tick()
             end
         end
 
-        _kernel_memory_["os-timer-last-tick"] = os.time()
+        _kernel_memory_["os-timer-last-tick"] = getTimeInSeconds()
     end
 
     --  Call a method to say the clock has updated!
     computer.pushSignal("kernel_clock_tick")
-    _kernel_memory_["data"]["display_main"].set(1, 15, "clock_update_return @ " .. tostring(os.time()))
+    _kernel_memory_["data"]["display_main"].set(1, 15, "clock_update_return @ " .. tostring(getTimeInSeconds()))
 end
 
 --  Create kernel 'interrupt' method
@@ -597,6 +606,8 @@ function kernel_signal(invoker, job, ...)
         _kernel_memory_["states"]["running"] = false
         _kernel_memory_["states"]["reboot"] = true
         return true
+    elseif job == "get_get_clock_tick" then
+        return true, _kernel_memory_["os-timer-last-tick"]
     end
 
     return false
@@ -776,22 +787,18 @@ initOS()
 ]]
 _kernel_memory_["data"]["display_main"].set(1, 10, "Attempting kernel loop!")
 
-local clock_thread = coroutine.create(function()
-    while _kernel_memory_["states"]["running"] do
-        _kernel_memory_["data"]["display_main"].set(1, 11, "clock_thread_tick @ " .. tostring(os.time()))
-        clock_tick()
-        _kernel_memory_["data"]["display_main"].set(1, 12, "clock_thread_tick_ok @ " .. tostring(os.time()))
-    end
-    _kernel_memory_["data"]["display_main"].set(1, 12, "clock_thread_close @ " .. tostring(os.time()))
-end)
-
-coroutine.resume(clock_thread)
-
 while _kernel_memory_["states"]["running"] do
     -- computer.pushSignal("ipc_message_" .. channel, sender, ...)
     -- computer.pullSignal("ipc_message_" .. channel)
-    _kernel_memory_["data"]["display_main"].set(1, 17, "os_tick @ " .. tostring(os.time()))
+
+    --  CLOCK
+    _kernel_memory_["data"]["display_main"].set(1, 11, "clock_thread_tick @ " .. tostring(getTimeInSeconds()))
+    clock_tick()
+    _kernel_memory_["data"]["display_main"].set(1, 12, "clock_thread_tick_ok @ " .. tostring(getTimeInSeconds()))
+
+    --  EVENTS
+    _kernel_memory_["data"]["display_main"].set(1, 17, "os_tick @ " .. tostring(getTimeInSeconds()))
     computer.pullSignal(1)
 end
-_kernel_memory_["data"]["display_main"].set(1, 18, "os_halt @ " .. tostring(os.time()))
+_kernel_memory_["data"]["display_main"].set(1, 18, "os_halt @ " .. tostring(getTimeInSeconds()))
 computer.shutdown(_kernel_memory_["states"]["reboot"])

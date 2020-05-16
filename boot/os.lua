@@ -5,7 +5,7 @@ local _, gpu = kernsig("get_data", "display_main")
 gpu.set(1, 2, "OS Started! :)")
 gpu.set(1, 3, "Kernel signals are working!") 
 
---sleep(3)
+sleep(3)
 
 local _, tty = kernsig("get_data", "tty_main")
 tty.clear(tty)
@@ -15,3 +15,11 @@ tty:println("Kernel signals are amazing!")
 tty:println("And the TTY library is great!")
 
 -- kernsig("shutdown")
+kernsig("get_get_clock_tick")
+
+--[[
+while true do
+    tty:clearLine()
+    tty:print("[DEBUG] " .. tostring(math.random(1,100)) .. " @ " .. tostring(os.clock()))
+end
+]]--

@@ -29,6 +29,10 @@ local tty = {}
         rawset(self, "y", 1)
     end
 
+    function tty.clearLine(self)
+        rawset(self, "x", 1)
+    end
+
     function tty.print(self, str)
         local x = rawget(self, "x")
         local y = rawget(self, "y")
