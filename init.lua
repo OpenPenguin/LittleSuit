@@ -56,6 +56,7 @@ local _kernel_memory_ = {
         ["reboot"] = false,
         ["show-clock-tick"] = true
     },
+    ["fs-handles"] = {},
     ["components"] = {},
     ["drivers"] = {},
     ["uuids"] = {},
@@ -506,6 +507,16 @@ function defineTimer(delayInSeconds, callback)
         ["callback"] = callback
     })
 end
+
+--  Create a handle (fs) system
+--  This may or may not actually be used!
+function createHandle(device, path, mode)
+
+end
+function closeHandle(uuid)
+
+end
+
 
 
 --===============================[ Define Kernal Responders ]===============================--
