@@ -296,13 +296,7 @@ end
 --  Create process systems
     function spawnProcess(enviroment, func)
         local t = coroutine.create(function(...)
-            if (enviroment == nil) then
-                -- No sandbox!
-                coroutine.yield(pcall(func, ...))
-            else
-                -- Yes sandbox!
-                coroutine.yield(run_sandbox(enviroment, func, ...))
-            end
+            coroutine.yield(run_sandbox(enviroment, func, ...))
         end)
         --coroutine.resume(t)
         return t
@@ -311,11 +305,17 @@ end
         local uuid = generateUUID("p")
 
         -- add some IMPORTANT methods to the enviroment
+        if enviroment == nil then
+            enviroment = {}
+        end
+
         enviroment["getCurrentProcess"] = function()
             return uuid
         end
 
-        local thread = spawnProcess(enviroment, func)
+        local thread = spawnProcess(enviroment, function(...)
+            func(...)
+        end)
         _kernel_memory_["processes"][uuid] = {
             ["uuid"] = uuid,
             ["owner"] = owner,
@@ -715,7 +715,7 @@ do
 
     _kernel_memory_["processes"][osProcess]["data"]["display_main"] = _kernel_memory_["data"]["display_main"]
 
-    local results = table.pack(startProcess(osProcess))
+    local results = table.pack(startProcess(osProcess, _kernel_memory_["data"]["display_main"]))
 
     if (results[1] == false) or ((results[2] == false)) then
         clearscreen()
