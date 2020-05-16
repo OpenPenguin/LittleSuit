@@ -68,5 +68,23 @@ local tty = {}
     function tty.println(self, str)
         self:print(str .. "\n")
     end
+    
+    local keyboard = require("keyboard.lua")
+
+    function getKeyUp()
+        local _, _, char, code = events.pull("key_up")
+        --return keyboard.convertKeycode(char) or ""
+        --return tostring(char)
+        --return tostring(code)
+        local name, char = keyboard.convertKeycode(code)
+        char = char or ""
+        return name, char
+    end
+
+    function tty.readCharacter(self)
+        local _, c = getKeyUp()
+        self:print(c)
+        return c
+    end
 
 return tty

@@ -8,6 +8,8 @@ _G._OSVERSION = "LittleSuit 1.0.0"
 _G._KERNEL = "LittleSuit"
 
 local computer = computer
+local io = io
+
 local _GLOBAL_ENVIROMENT_=_ENV
 
 local UUID_LENGTH = 16
@@ -62,6 +64,10 @@ local _kernel_memory_ = {
     ["uuids"] = {},
     ["data"] = {},
     ["timers"] = {},
+    ["kernel-events"] = {
+        ["key_down"] = {},
+        ["key_up"] = {}
+    },
     ["os-timer-last-tick"] = 0,
     ["os-clock-ticks"] = 0,
     ["os-event-ticks"] = 0
@@ -174,6 +180,8 @@ end
 --  Get the raw filesystem
 local rfs = component.proxy(computer.getBootAddress())
 local rfaddr = computer.getBootAddress()
+
+main_disk_address = rfaddr
 
 function checkUserHasPermission(userID, permission)
     local user = _kernel_memory_["users"][userID]
@@ -308,21 +316,28 @@ end
         --coroutine.resume(t)
         return t
     end
-    function createProcess(owner, enviroment, funcloader)
+    function createProcess(owner, enviroment, path)
         local uuid = generateUUID("p")
 
         -- add some IMPORTANT methods to the enviroment
-        if enviroment == nil then
-            enviroment = {}
+        enviroment["sleep"] = function(delay)
+            if delay == nil then
+                delay = 1
+            end
+            defineTimer(delay, function()
+                coroutine.resume(_kernel_memory_["processes"][uuid]["proxy"])
+            end)    
+            coroutine.yield()
         end
 
-        --[[
-        enviroment["getCurrentProcess"] = function()
-            return uuid
+        enviroment["kernsig"] = function(job, ...)
+            local r = {kernel_signal(uuid, job, ...)}
+            assert(r[1], "NO STATE DEFINED FOR KERNSIG")
+            return table.unpack(r)
         end
-        ]]--
+    
 
-        local func = funcloader(uuid, enviroment)
+        local func = assert(loadfile(rfaddr, path, enviroment), "Failed to load operating system!")
 
         local thread = spawnProcess(enviroment, function(...)
             --return run_sandbox(enviroment, func, ...)
@@ -552,29 +567,41 @@ function createDeviceSocketFile()
         The DSFs created here will look like this `/dev/c--`, where the last are a UUID.
     ]]
 end
-function loadComponents()
-    for address, componentType in component.list() do
-        if _kernel_memory_["components"][address] == nil then
-            local driver = getDriver(componentType)
 
-            _kernel_memory_["components"][address] = {
-                ["address"] = address,
-                ["type"] = componentType,
-                ["slot"] = component.slot(address),
-                ["driver-class"] = driver.class,
-                ["driver-name"] = driver.name,
-                ["proxy"] = driver.new(component.proxy(address))
-            }
+function mountComponent(address, componentType)
+    if _kernel_memory_["components"][address] == nil then
+        local driver = getDriver(componentType)
 
-            computer.pushSignal("kernel_device_connected", address)
-        end
+        _kernel_memory_["components"][address] = {
+            ["address"] = address,
+            ["type"] = componentType,
+            ["slot"] = component.slot(address),
+            ["driver-class"] = driver.class,
+            ["driver-name"] = driver.name,
+            ["proxy"] = driver.new(component.proxy(address))
+        }
+
+        computer.pushSignal("kernel_device_connected", address)
     end
 end
-function pollComponents()
-    if #component.list() ~= #_kernel_memory_["components"] then
-        -- A component was added or removed! 
-        loadComponents()
+
+function unmountComponent(address)
+    _kernel_memory_["components"][address] = nil
+    computer.pushSignal("kernel_device_disconnected", address)
+end
+
+function componentFirstLoad()
+    for address, componentType in component.list() do
+        mountComponent(address, componentType)
     end
+end
+
+function onComponentAdded(address, componentType)
+    mountComponent(address, componentType)
+end
+
+function onComponentRemoved(address, componentType)
+    unmountComponent(address)
 end
 
 function clock_tick()
@@ -600,6 +627,14 @@ function clock_tick()
 end
 
 --  Create kernel 'interrupt' method
+function kernel_event_subcribe(event_name, callback)
+    if _kernel_memory_["kernel-events"][event_name] ~= nil then
+        table.insert(_kernel_memory_["kernel-events"][event_name], callback)
+        return true
+    end
+    return false
+end
+
 function kernel_signal(invoker, job, ...)
     local arguments = {...}
     job = job:lower()
@@ -609,6 +644,9 @@ function kernel_signal(invoker, job, ...)
         if pentry["data"][arguments[1]] ~= nil then
             return true, pentry["data"][arguments[1]]
         end
+    elseif job == "set_data" then
+        _kernel_memory_["processes"][invoker]["data"][arguments[1]] = arguments[2]
+        return true
     elseif job == "shutdown" then
         _kernel_memory_["states"]["running"] = false
         return true
@@ -620,8 +658,32 @@ function kernel_signal(invoker, job, ...)
         return true, _kernel_memory_["os-timer-last-tick"]
     elseif job == "get_current_process" then
         return true, invoker
-    end
+    elseif job == "create_process" then
+        local file = arguments[1]
+        local pid = createProcess(invoker, _Sandbox_G, file)
+        return true, pid
+    elseif job == "start_process" then
+        local pid = arguments[1]
+        startProcess(pid)
+    elseif job == "set_data_for" then
+        local pid = arguments[1]
+        local name = arguments[2]
+        local value = arguments[3]
+        _kernel_memory_["processes"][pid]["data"][name] = value
+        return true
+    elseif job == "get_data_from" then
+        local pid = arguments[1]
+        local name = arguments[2]
+        local pentry = _kernel_memory_["processes"][pid]
 
+        if pentry["data"][name] ~= nil then
+            return true, pentry["data"][name]
+        end
+    elseif job == "kernel_event_subcribe" then
+        local event_name = arguments[1]
+        local callback = arguments[2]
+        return kernel_event_subcribe(event_name, callback)
+    end
     return false
 end
 
@@ -709,6 +771,25 @@ _Sandbox_G = {
 }
 
 --====================================[ Start OS Level ]====================================--
+-- TEMPORARY REQUIRE METHOD
+require = function(target)
+    if rfs.exists(target) then
+        return importfile(rfaddr, target)
+    elseif rfs.exists("/lib/kernel/" .. target) then
+        return importfile(rfaddr, "/lib/kernel/" .. target)
+    elseif rfs.exists("/lib/kernel/" .. target .. ".lua") then
+        return importfile(rfaddr, "/lib/kernel/" .. target .. ".lua")
+    elseif rfs.exists("/lib/" .. target) then
+        return importfile(rfaddr, "/lib/" .. target)
+    elseif rfs.exists("/lib/" .. target .. ".lua") then
+        return importfile(rfaddr, "/lib/" .. target .. ".lua")
+    end
+    return nil
+end
+
+events = importfile(rfaddr, "/lib/kernel/events.lua")
+
+--  Setup graphics!
 local clearscreen
 do
     local screen = component.list("screen", true)()
@@ -740,28 +821,10 @@ do
     end
 end
 
+--  Method to load the OS
 function initOS()
     _kernel_memory_["data"]["display_main"].set(1, 1, "Attempting startup!")
-    local os = loadfile(rfaddr, "/boot/os.lua")
-    local osProcess = createProcess("kerneluser-root", _Sandbox_G, function(UUID, env)
-        env["sleep"] = function(delay)
-            if delay == nil then
-                delay = 1
-            end
-            defineTimer(delay, function()
-                coroutine.resume(_kernel_memory_["processes"][env["getCurrentProcess"]()]["proxy"])
-            end)    
-            coroutine.yield()
-        end
-
-        env["kernsig"] = function(job, ...)
-            local r = {kernel_signal(UUID, job, ...)}
-            assert(r[1], "NO STATE DEFINED FOR KERNSIG")
-            return table.unpack(r)
-        end
-
-        return loadfile(rfaddr, "/boot/os.lua", env)
-    end)
+    local osProcess = createProcess("kerneluser-root", _Sandbox_G, "/boot/os.lua")
 
     _kernel_memory_["processes"][osProcess]["data"]["display_main"] = _kernel_memory_["data"]["display_main"]
     _kernel_memory_["processes"][osProcess]["data"]["tty_main"] = _kernel_memory_["data"]["tty"]
@@ -787,6 +850,10 @@ function initOS()
     end
 end
 
+--  Prepare for loading the OS
+componentFirstLoad()
+
+--  Load the OS
 initOS()
 
 --[[
@@ -817,7 +884,29 @@ do
     end)
 end
 
-coroutine.resume(clock_thread)
+-- coroutine.resume(clock_thread)
+
+local function kernel_event_dispatcher(event_name, ...)
+    local subcribers = _kernel_memory_["kernel-events"][event_name]
+    for _, subcriber in pairs(subcribers) do
+        subcriber(event_name, ...)
+    end
+end
+
+local function kernel_signal_responder(signal_name, ...)
+    local args = {...}
+
+    if signal_name == "component_added" then
+        component_added(args[1], args[2])
+    elseif signal_name == "component_removed" then
+        component_removed(args[1], args[2])
+    elseif signal_name == "key_down" then
+        kernel_event_dispatcher("key_down", table.unpack(args))
+    elseif signal_name == "key_up" then
+
+    end
+
+end
 
 while _kernel_memory_["states"]["running"] do
     -- computer.pushSignal("ipc_message_" .. channel, sender, ...)
@@ -835,10 +924,17 @@ while _kernel_memory_["states"]["running"] do
     end
 
     if coroutine.status(clock_thread) ~= "running" then
-        coroutine.resume(clock_thread)
+        -- coroutine.resume(clock_thread)
     end
 
-    computer.pullSignal(1)
+    local signal = {computer.pullSignal(1)}
+
+    if signal ~= nil then
+        if #signal > 0 then
+            kernel_signal_responder(table.unpack(signal or {}))
+        end
+    end
+
     _kernel_memory_["os-event-ticks"] = _kernel_memory_["os-event-ticks"] + 1
 end
 _kernel_memory_["data"]["display_main"].set(1, 18, "os_halt @ " .. tostring(getTimeInSeconds()))

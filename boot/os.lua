@@ -5,7 +5,7 @@ local _, gpu = kernsig("get_data", "display_main")
 gpu.set(1, 2, "OS Started! :)")
 gpu.set(1, 3, "Kernel signals are working!") 
 
-sleep(3)
+-- sleep(3)
 
 local _, tty = kernsig("get_data", "tty_main")
 tty.clear(tty)
@@ -23,3 +23,13 @@ while true do
     tty:print("[DEBUG] " .. tostring(math.random(1,100)) .. " @ " .. tostring(os.clock()))
 end
 ]]--
+local termrun = true
+while termrun do
+    tty:print("> ")
+    local c = ''
+    while c ~= '\n' do
+        tty:readCharacter()
+    end
+    tty:print("~~~~")
+    tty:println("")
+end
