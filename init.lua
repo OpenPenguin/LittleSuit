@@ -127,7 +127,7 @@ function removeFromTableByValue(tbl, target)
     table.remove(tbl, index)
 end
 
-function loadfile(addr, file)
+function loadfile(addr, file, env)
     local handle = assert(component.invoke(addr, "open", file), "Unable to open file!")
     local buffer = ""
     repeat
@@ -135,7 +135,7 @@ function loadfile(addr, file)
         buffer = buffer .. (data or "")
     until not data
     component.invoke(addr, "close", handle)
-    return load(buffer, "=" .. file, "bt", _G)
+    return load(buffer, "=" .. file, "bt", env or _G)
 end
 
 function importfile(addr, file)
@@ -163,6 +163,8 @@ function run_sandbox(sb_env, sb_func, ...)
     _ENV=sb_orig_env
     return _GLOBAL_ENVIROMENT_.table.unpack(sb_ret)
 end
+
+
 
 --  Get the raw filesystem
 local rfs = component.proxy(computer.getBootAddress())
@@ -301,7 +303,7 @@ end
         --coroutine.resume(t)
         return t
     end
-    function createProcess(owner, enviroment, func)
+    function createProcess(owner, enviroment, funcloader)
         local uuid = generateUUID("p")
 
         -- add some IMPORTANT methods to the enviroment
@@ -309,12 +311,17 @@ end
             enviroment = {}
         end
 
+        --[[
         enviroment["getCurrentProcess"] = function()
             return uuid
         end
+        ]]--
+
+        local func = funcloader(uuid, enviroment)
 
         local thread = spawnProcess(enviroment, function(...)
-            return run_sandbox(enviroment, func, ...)
+            --return run_sandbox(enviroment, func, ...)
+            return func(...)
         end)
         _kernel_memory_["processes"][uuid] = {
             ["uuid"] = uuid,
@@ -711,7 +718,13 @@ end
 do
     _kernel_memory_["data"]["display_main"].set(1, 1, "Attempting startup!")
     local os = loadfile(rfaddr, "/boot/os.lua")
-    local osProcess = createProcess("kerneluser-root", _Sandbox_G, os)
+    local osProcess = createProcess("kerneluser-root", _Sandbox_G, function(UUID, env)
+        env["getProcessID"] = function()
+            return UUID
+        end
+
+        return loadfile(rfaddr, "/boot/os.lua", env)
+    end)
 
     _kernel_memory_["processes"][osProcess]["data"]["display_main"] = _kernel_memory_["data"]["display_main"]
 
