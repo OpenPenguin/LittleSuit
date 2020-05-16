@@ -17,19 +17,10 @@ tty:println("And the TTY library is great!")
 -- kernsig("shutdown")
 kernsig("get_get_clock_tick")
 
---[[
-while true do
-    tty:clearLine()
-    tty:print("[DEBUG] " .. tostring(math.random(1,100)) .. " @ " .. tostring(os.clock()))
-end
-]]--
-local termrun = true
-while termrun do
-    tty:print("> ")
-    local c = ''
-    while c ~= '\n' do
-        tty:readCharacter()
-    end
-    tty:print("~~~~")
-    tty:println("")
-end
+tty:println("Press any key to load the terminal...")
+tty:getCharacter()
+
+local _, term_pid = kernsig("create_process", "/boot/fdbx.lua")
+kernsig("set_data_for", term_pid, "tty_main", tty)
+kernsig("set_data_for", term_pid, "display_main", gpu)
+kernsig("start_process", term_pid)

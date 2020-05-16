@@ -332,7 +332,7 @@ end
 
         enviroment["kernsig"] = function(job, ...)
             local r = {kernel_signal(uuid, job, ...)}
-            assert(r[1], "NO STATE DEFINED FOR KERNSIG")
+            --assert(r[1], "NO STATE DEFINED FOR KERNSIG")
             return table.unpack(r)
         end
     
@@ -688,7 +688,25 @@ function kernel_signal(invoker, job, ...)
 end
 
 --========================[ Define API Wrappers for Kernel Methods ]========================--
+-- TEMPORARY REQUIRE METHOD
+require = function(target)
+    if rfs.exists(target) then
+        return importfile(rfaddr, target)
+    elseif rfs.exists("/lib/kernel/" .. target) then
+        return importfile(rfaddr, "/lib/kernel/" .. target)
+    elseif rfs.exists("/lib/kernel/" .. target .. ".lua") then
+        return importfile(rfaddr, "/lib/kernel/" .. target .. ".lua")
+    elseif rfs.exists("/lib/" .. target) then
+        return importfile(rfaddr, "/lib/" .. target)
+    elseif rfs.exists("/lib/" .. target .. ".lua") then
+        return importfile(rfaddr, "/lib/" .. target .. ".lua")
+    elseif target == "computer" then
+        return computer
+    end
+    return nil
+end
 
+events = importfile(rfaddr, "/lib/kernel/events.lua")
 
 --================================[ Define Default Sandbox ]================================--
 _Sandbox_G = {
@@ -767,27 +785,10 @@ _Sandbox_G = {
         time = os.time
     },
     print = print,
-    --  Custom Objects
+    require = require,
 }
 
 --====================================[ Start OS Level ]====================================--
--- TEMPORARY REQUIRE METHOD
-require = function(target)
-    if rfs.exists(target) then
-        return importfile(rfaddr, target)
-    elseif rfs.exists("/lib/kernel/" .. target) then
-        return importfile(rfaddr, "/lib/kernel/" .. target)
-    elseif rfs.exists("/lib/kernel/" .. target .. ".lua") then
-        return importfile(rfaddr, "/lib/kernel/" .. target .. ".lua")
-    elseif rfs.exists("/lib/" .. target) then
-        return importfile(rfaddr, "/lib/" .. target)
-    elseif rfs.exists("/lib/" .. target .. ".lua") then
-        return importfile(rfaddr, "/lib/" .. target .. ".lua")
-    end
-    return nil
-end
-
-events = importfile(rfaddr, "/lib/kernel/events.lua")
 
 --  Setup graphics!
 local clearscreen

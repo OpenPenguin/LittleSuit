@@ -29,8 +29,25 @@ local tty = {}
         rawset(self, "y", 1)
     end
 
+    function tty.backspace(self)
+        local x = rawget(self, "x")
+        local y = rawget(self, "y")
+        local display = rawget(self, "display")
+        x = x - 1
+        display.set(x, y, " ")
+        rawset(self, "x", x)
+        rawset(self, "y", y)
+    end
+
     function tty.clearLine(self)
         rawset(self, "x", 1)
+    end
+
+    function tty.set(self, char)
+        local x = rawget(self, "x")
+        local y = rawget(self, "y")
+        local display = rawget(self, "display")
+        display.set(x, y, char)
     end
 
     function tty.print(self, str)
@@ -70,21 +87,37 @@ local tty = {}
     end
     
     local keyboard = require("keyboard.lua")
+    local io = require("io")
 
-    function getKeyUp()
-        local _, _, char, code = events.pull("key_up")
-        --return keyboard.convertKeycode(char) or ""
-        --return tostring(char)
-        --return tostring(code)
-        local name, char = keyboard.convertKeycode(code)
-        char = char or ""
-        return name, char
+    function tty.getCharacter(self)
+        return io.readChar()
     end
 
     function tty.readCharacter(self)
-        local _, c = getKeyUp()
-        self:print(c)
-        return c
+        local char, code = io.readChar()
+        self:print(char)
+        return char, code
+    end
+
+    function tty.readLine(self)
+        local buffer = ""
+        local char = ''
+        local code = 0
+        while not ((code == 0x1C) or (code == 0x9C)) do
+            char, code = io.readChar()
+            if code == 0x0E then
+                self:backspace()
+                if string.len(buffer) > 0 then
+                    buffer = buffer:sub(1, string.len(buffer) - 1)
+                end
+            elseif ((code == 0x1C) or (code == 0x9C)) then
+                -- EOL!
+            else
+                self:print(char)
+                buffer = buffer .. char
+            end
+        end
+        return buffer
     end
 
 return tty
