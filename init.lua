@@ -57,7 +57,9 @@ local _kernel_memory_ = {
     ["components"] = {},
     ["drivers"] = {},
     ["uuids"] = {},
-    ["data"] = {}
+    ["data"] = {},
+    ["timers"] = {},
+    ["os-timer-last-tick"] = 0
 }
 
 --  Define some generic helpers
@@ -307,11 +309,18 @@ end
     end
     function createProcess(owner, enviroment, func)
         local uuid = generateUUID("p")
+
+        -- add some IMPORTANT methods to the enviroment
+        enviroment["getCurrentProcess"] = function()
+            return uuid
+        end
+
         local thread = spawnProcess(enviroment, func)
         _kernel_memory_["processes"][uuid] = {
             ["uuid"] = uuid,
             ["owner"] = owner,
-            ["proxy"] = thread
+            ["proxy"] = thread,
+            ["data"] = {}
         }
         return uuid
     end
@@ -319,6 +328,7 @@ end
         return _kernel_memory_["processes"][processID]
     end
     function startProcess(processID, ...)
+        
         return coroutine.resume(_kernel_memory_["processes"][processID]["proxy"], ...)
     end
     function killProcess(processID)
@@ -468,9 +478,28 @@ end
     end
 
 --  Create kernel 'interrupt' method
-function kernel_signal(job, ...)
+function kernel_signal(invoker, job, ...)
     local arguments = {...}
+    if job:lower() == "get_data" then
+        local pentry = _kernel_memory_["processes"][invoker]
 
+        if pentry["data"][arguments[1]] ~= nil then
+            return pentry["data"][arguments[1]]
+        end
+    end
+
+    return nil
+end
+
+--  Create a timer system
+function defineTimer(delayInSeconds, callback)
+    local currentTime = os.time()
+    local triggerTime = currentTime + delayInSeconds
+    table.insert(_kernel_memory_["timers"], {
+        ["created"] = currentTime,
+        ["trigger"] = triggerTime,
+        ["callback"] = callback
+    })
 end
 
 --===============================[ Define Kernal Responders ]===============================--
@@ -531,6 +560,27 @@ function pollComponents()
     end
 end
 
+function clock_tick()
+    --  Get the current time
+    local currentTime = os.time()
+
+    -- Verify at least a second has passed!
+    if currentTime > _kernel_memory_["os-timer-last-tick"] then
+        --  Check if any timers have expired!
+        for index, timer in pairs(_kernel_memory_["timers"]) do
+            if timer["trigger"] <= currentTime then
+                timer["callback"]()
+                table.remove(_kernel_memory_["timers"], index)
+            end
+        end
+
+        _kernel_memory_["os-timer-last-tick"] = os.time()
+    end
+
+    --  Call a method to say the clock has updated!
+    computer.pushSignal("kernel_clock_tick")
+end
+
 --========================[ Define API Wrappers for Kernel Methods ]========================--
 
 
@@ -550,7 +600,8 @@ _Sandbox_G = {
         resume = coroutine.resume, 
         running = coroutine.running, 
         status = coroutine.status, 
-        wrap = coroutine.wrap 
+        wrap = coroutine.wrap,
+        yeild = coroutine.yeild
     },
     string = { 
         byte = string.byte, 
@@ -565,7 +616,8 @@ _Sandbox_G = {
         rep = string.rep, 
         reverse = string.reverse, 
         sub = string.sub, 
-        upper = string.upper },
+        upper = string.upper 
+    },
     table = { 
         insert = table.insert, 
         maxn = table.maxn, 
@@ -608,13 +660,24 @@ _Sandbox_G = {
         difftime = os.difftime, 
         time = os.time
     },
-    print = print
+    print = print,
     --  Custom Objects
-
+    sleep = function(delay)
+        if delay == nil then
+            delay = 1
+        end
+        defineTimer(delay, function()
+            coroutine.resume(_kernel_memory_["processes"][getCurrentProcess()]["proxy"])
+        end)
+        coroutine.yeild()        
+    end,
+    kernsig = function(job, ...)
+        kernel_signal(getCurrentProcess(), job, ...)
+    end
 }
 
 --====================================[ Start OS Level ]====================================--
-local status
+local clearscreen
 do
     local screen = component.list("screen", true)()
     local gpu = screen and component.list("gpu", true)()
@@ -631,35 +694,46 @@ do
     gpu.fill(1, 1, w, h, " ")
   
     local tty_lib = importfile(rfaddr, "/lib/kernel/tty.lua")
-
-    --local tty = tty_lib.new(gpu)
+    local tty = tty_lib.new(gpu)
 
     _kernel_memory_["data"]["display_main"] = gpu
-    --_kernel_memory_["data"]["tty"] = tty
+    _kernel_memory_["data"]["tty"] = tty
+
+    clearscreen = function()
+        local w, h = gpu.maxResolution()
+        gpu.setResolution(w, h)
+        gpu.setBackground(0x000000)
+        gpu.setForeground(0xFFFFFF)
+        gpu.fill(1, 1, w, h, " ")
+    end
 end
 
 do
-    --status("Booting OS")
     _kernel_memory_["data"]["display_main"].set(1, 1, "Attempting startup!")
     local os = loadfile(rfaddr, "/boot/os.lua")
     local osProcess = createProcess("kerneluser-root", _Sandbox_G, os)
-    local results = table.pack(startProcess(osProcess, _kernel_memory_["data"]["display_main"]))
 
-    --[[
-    local l = 2
-    for index, value in pairs(results) do
-        if value == nil then
-            _kernel_memory_["data"]["display_main"].set(1, l, "nil")
-        elseif value == true then
-            _kernel_memory_["data"]["display_main"].set(1, l, "true")
-        elseif value == false then
-            _kernel_memory_["data"]["display_main"].set(1, l, "false")
-        else
-            _kernel_memory_["data"]["display_main"].set(1, l, tostring(value))
+    _kernel_memory_["processes"][osProcess]["data"]["display_main"] = _kernel_memory_["data"]["display_main"]
+
+    local results = table.pack(startProcess(osProcess))
+
+    if (results[1] == false) or ((results[2] == false)) then
+        clearscreen()
+        _kernel_memory_["data"]["display_main"].set(1, 1, "OS Error!")
+        local y = 2
+        for index, value in pairs(results) do
+            if value == true then
+                _kernel_memory_["data"]["display_main"].set(1, y, "true")
+            elseif value == false then
+                _kernel_memory_["data"]["display_main"].set(1, y, "false")
+            elseif value == nil then
+                _kernel_memory_["data"]["display_main"].set(1, y, "nil")
+            else
+                _kernel_memory_["data"]["display_main"].set(1, y, tostring(value))
+            end
+            y = y + 1
         end
-        l = l + 1
     end
-    ]]--
 
 end
 
@@ -670,5 +744,6 @@ end
 while _kernel_memory_["states"]["running"] do
     -- computer.pushSignal("ipc_message_" .. channel, sender, ...)
     -- computer.pullSignal("ipc_message_" .. channel)
+    clock_tick()
     computer.pullSignal(math.huge)
 end
