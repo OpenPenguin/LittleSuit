@@ -572,11 +572,11 @@ function clock_tick()
     local currentTime = os.time()
 
     -- Debug!
-    _kernel_memory_["data"]["display_main"].set(1, 13, "Clock tick @ " .. tostring(currentTime))
+    _kernel_memory_["data"]["display_main"].set(1, 13, "clock_tick @ " .. tostring(currentTime))
 
     -- Verify at least a second has passed!
     if currentTime > _kernel_memory_["os-timer-last-tick"] then
-        _kernel_memory_["data"]["display_main"].set(1, 14, "Clock update @ " .. tostring(currentTime))
+        _kernel_memory_["data"]["display_main"].set(1, 14, "clock_update @ " .. tostring(currentTime))
         --  Check if any timers have expired!
         for index, timer in pairs(_kernel_memory_["timers"]) do
             if timer["trigger"] <= currentTime then
@@ -589,9 +589,8 @@ function clock_tick()
     end
 
     --  Call a method to say the clock has updated!
-    _kernel_memory_["data"]["display_main"].set(1, 15, "Clock update pushed @ " .. tostring(os.time()))
     computer.pushSignal("kernel_clock_tick")
-    _kernel_memory_["data"]["display_main"].set(1, 16, "Clock update returning @ " .. tostring(os.time()))
+    _kernel_memory_["data"]["display_main"].set(1, 15, "clock_update_return @ " .. tostring(os.time()))
 end
 
 --========================[ Define API Wrappers for Kernel Methods ]========================--
@@ -781,6 +780,7 @@ coroutine.resume(clock_thread)
 while _kernel_memory_["states"]["running"] do
     -- computer.pushSignal("ipc_message_" .. channel, sender, ...)
     -- computer.pullSignal("ipc_message_" .. channel)
+    _kernel_memory_["data"]["display_main"].set(1, 17, "os_tick @ " .. tostring(os.time()))
     computer.pullSignal(1)
 end
-_kernel_memory_["data"]["display_main"].set(1, 17, "OS halted @ " .. tostring(os.time()))
+_kernel_memory_["data"]["display_main"].set(1, 18, "os_halt @ " .. tostring(os.time()))
